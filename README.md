@@ -218,15 +218,11 @@ print(f"Sentiment : {sentiment} (Confidence: {conf:.2f}%)")
 Running Section 10 of the notebook automatically creates and populates the `saved_models/` directory:
 
 1. **`./saved_models/distilbert_sentiment/` (Deep Learning Tier):**
-   * **`model.safetensors` (~268 MB):** Serialized transformer weights in Hugging Face safetensors format, preventing arbitrary code execution during deserialization.
+   * **`model.safetensors`:** Serialized transformer weights in Hugging Face safetensors format, preventing arbitrary code execution during deserialization.
    * **`config.json`:** Model configuration defining architecture dimensions (6 layers, 768 hidden size, 12 attention heads) and binary output label mapping.
    * **`tokenizer_config.json` & `vocab.txt`:** WordPiece vocabulary (30,522 subword tokens) and special token formatting (`[CLS]`, `[SEP]`, `[PAD]`).
-2. **`./saved_models/tfidf_pipeline.joblib` (~1.5 MB) (CPU Fallback Tier):**
+2. **`./saved_models/tfidf_pipeline.joblib` (CPU Fallback Tier):**
    * A serialized Python dictionary containing the fitted `TfidfVectorizer` (50,000 vocabulary n-grams) and the trained `LogisticRegression` weight coefficients for instantaneous, zero-GPU inference.
-
-### Why Saved Models are in `.gitignore`
-
-In accordance with machine learning repository standards, the `saved_models/` folder is excluded from version control via `.gitignore`. The DistilBERT weights file (`model.safetensors`) is 268 MB, which exceeds GitHub's 100 MB single-file limit. Running Section 10 of the notebook reproduces these exact files locally on demand.
 
 ---
 
