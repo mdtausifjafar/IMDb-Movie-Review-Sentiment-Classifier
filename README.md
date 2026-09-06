@@ -43,15 +43,18 @@ The winning DistilBERT model weights and tokenizer are exported via `save_pretra
 Below is the breakdown of each technology, library, and specific module utilized, detailing its exact role in the pipeline:
 
 ### 1. Core Programming Environment
+
 * **Python 3.10+:** Primary runtime environment for data orchestration, feature extraction, model training, and production serialization.
 
 ### 2. Deep Learning Framework
+
 * **PyTorch (`torch`):**
   * Provides the computational backend for DistilBERT tensor manipulations.
   * Enables GPU acceleration (`torch.cuda.is_available()`) and 16-bit mixed precision (`fp16=True`) for 2x faster training throughput with reduced VRAM usage.
   * Powers tensor wrapping in `IMDbDataset(Dataset)` and gradient backpropagation across transformer layers.
 
 ### 3. Transformers and Natural Language Processing
+
 * **Hugging Face Transformers (`transformers`):**
   * `DistilBertTokenizerFast`: Implements fast Rust-backed subword (WordPiece) tokenization. Converts raw text into input token IDs and attention masks with automated truncation (`max_length=256`) and padding.
   * `DistilBertForSequenceClassification`: Instantiates a pretrained 6-layer DistilBERT base model with a specialized 2-class linear classification head placed on top of the pooled transformer output.
@@ -64,6 +67,7 @@ Below is the breakdown of each technology, library, and specific module utilized
   * `gensim.downloader.load('glove-wiki-gigaword-100')`: Fetches the 400,000-word GloVe lookup table pretrained on 6 billion tokens. Maps word tokens to static 100-dimensional distributed vectors for semantic mean-pooling.
 
 ### 4. Classical Machine Learning and Metrics
+
 * **Scikit-Learn (`sklearn`):**
   * `TfidfVectorizer`: Transforms cleaned reviews into a high-dimensional sparse matrix of 50,000 unigrams and bigrams with sublinear term frequency scaling (`1 + log(tf)`).
   * `LogisticRegression`: The shared downstream linear classifier used across TF-IDF, GloVe, and Sentence-BERT. Keeping this model constant isolates representation quality from classifier capacity.
@@ -73,6 +77,7 @@ Below is the breakdown of each technology, library, and specific module utilized
   * `confusion_matrix` & `classification_report`: Generates class-level true positive, true negative, false positive, and false negative counts.
 
 ### 5. Numerical Processing and Data Analytics
+
 * **NumPy (`numpy`):**
   * Performs fast vector calculations, including row-wise mean-pooling (`np.mean(vecs, axis=0)`) across GloVe word vectors to construct review embeddings.
   * Computes statistical metrics such as median, mean, and 95th percentile lengths, and converts model logit arrays via softmax operations.
@@ -81,6 +86,7 @@ Below is the breakdown of each technology, library, and specific module utilized
   * Formats the unified Model Comparison Summary table and coordinates live inference outputs for side-by-side model predictions.
 
 ### 6. Data Visualization
+
 * **Matplotlib (`matplotlib.pyplot`):**
   * Orchestrates multi-subplot canvas layouts, custom bar width positioning, legend styling, and axis range constraints.
   * Generates the multi-model ROC curve plot (True Positive Rate vs False Positive Rate) and the side-by-side four-metric grouped bar chart.
@@ -89,6 +95,7 @@ Below is the breakdown of each technology, library, and specific module utilized
   * Generates the Kernel Density Estimation (KDE) review word count distribution plot with overlay thresholds.
 
 ### 7. Production Model Serialization
+
 * **Joblib (`joblib`):**
   * Serializes the classical pipeline (`TfidfVectorizer` + `LogisticRegression`) into a standalone binary file (`tfidf_pipeline.joblib`) for sub-millisecond CPU deployment without deep learning dependencies.
 * **Hugging Face `save_pretrained`:**
@@ -104,7 +111,7 @@ IMDb Movie Review Sentiment Classifier/
 |-- IMDb Movie Review Sentiment Classifier.ipynb   # Complete executable notebook (51 cells)
 |-- LICENSE                                        # Repository license
 |-- README.md                                      # Documentation and benchmark report
-\-- saved_models/                                  # Exported production model artifacts
+\-- saved_models/                                  # Exported production model artifacts (generated via Section 10)
     |-- distilbert_sentiment/                      # Exported DistilBERT weights and tokenizer
     |   |-- config.json
     |   |-- model.safetensors
@@ -112,6 +119,114 @@ IMDb Movie Review Sentiment Classifier/
     |   \-- vocab.txt
     \-- tfidf_pipeline.joblib                      # Serialized TF-IDF vectorizer and classifier
 ```
+
+---
+
+## How to Run the Project
+
+### 1. Environment Setup
+
+Clone the repository and install the required dependencies:
+
+```bash
+git clone https://github.com/mdtausifjafar/IMDb-Movie-Review-Sentiment-Classifier.git
+cd "IMDb Movie Review Sentiment Classifier"
+pip install torch transformers datasets sentence-transformers gensim scikit-learn pandas numpy matplotlib seaborn joblib
+```
+
+### 2. Running the Complete Experiment
+
+The end-to-end benchmark is fully contained in `IMDb Movie Review Sentiment Classifier.ipynb`:
+
+* **Google Colab (Recommended):**
+  1. Upload `IMDb Movie Review Sentiment Classifier.ipynb` to Google Colab.
+  2. Navigate to `Runtime > Change runtime type` and select **T4 GPU** for fast transformer fine-tuning.
+  3. Run all cells (`Runtime > Run all`).
+* **Local Jupyter Environment:**
+  Launch Jupyter Lab or VS Code and execute the notebook cells sequentially from top to bottom.
+
+---
+
+## How to Run Inference with Saved Models
+
+Once Section 10 of the notebook is executed, both production models are saved into the `saved_models/` directory. You can reload and use either model in Python with the scripts below:
+
+### Option A: Inference with Fine-Tuned DistilBERT (High Accuracy)
+
+```python
+import torch
+import numpy as np
+from transformers import DistilBertForSequenceClassification, DistilBertTokenizerFast
+
+# Load exported model and tokenizer from disk
+model_path = "./saved_models/distilbert_sentiment"
+tokenizer = DistilBertTokenizerFast.from_pretrained(model_path)
+model = DistilBertForSequenceClassification.from_pretrained(model_path)
+model.eval()
+
+# Input text to classify
+review = "An extraordinary cinematic achievement with masterful acting and direction."
+
+# Tokenize and run forward pass
+inputs = tokenizer(review, truncation=True, padding=True, max_length=256, return_tensors="pt")
+with torch.no_grad():
+    logits = model(**inputs).logits
+    probs = torch.softmax(logits, dim=-1)[0].numpy()
+    pred = int(np.argmax(probs))
+
+sentiment = "Positive" if pred == 1 else "Negative"
+confidence = float(probs[pred]) * 100
+
+print(f"Review    : {review}")
+print(f"Sentiment : {sentiment} (Confidence: {confidence:.2f}%)")
+```
+
+### Option B: Inference with TF-IDF Baseline (Fast CPU Serving)
+
+```python
+import re
+import joblib
+
+# Minimal text cleaner
+def preprocess(text):
+    text = text.lower()
+    text = re.sub(r"<.*?>", " ", text)
+    text = re.sub(r"[^a-z\s]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+# Load serialized TF-IDF pipeline from disk
+pipeline = joblib.load("./saved_models/tfidf_pipeline.joblib")
+vectorizer = pipeline["vectorizer"]
+classifier = pipeline["classifier"]
+
+# Input text to classify
+review = "An extraordinary cinematic achievement with masterful acting and direction."
+clean_text = preprocess(review)
+vec = vectorizer.transform([clean_text])
+pred = int(classifier.predict(vec)[0])
+conf = float(classifier.predict_proba(vec)[0][pred]) * 100
+
+sentiment = "Positive" if pred == 1 else "Negative"
+print(f"Review    : {review}")
+print(f"Sentiment : {sentiment} (Confidence: {conf:.2f}%)")
+```
+
+---
+
+## About the Saved Model Files
+
+Running Section 10 of the notebook automatically creates and populates the `saved_models/` directory:
+
+1. **`./saved_models/distilbert_sentiment/` (Deep Learning Tier):**
+   * **`model.safetensors` (~268 MB):** Serialized transformer weights in Hugging Face safetensors format, preventing arbitrary code execution during deserialization.
+   * **`config.json`:** Model configuration defining architecture dimensions (6 layers, 768 hidden size, 12 attention heads) and binary output label mapping.
+   * **`tokenizer_config.json` & `vocab.txt`:** WordPiece vocabulary (30,522 subword tokens) and special token formatting (`[CLS]`, `[SEP]`, `[PAD]`).
+2. **`./saved_models/tfidf_pipeline.joblib` (~1.5 MB) (CPU Fallback Tier):**
+   * A serialized Python dictionary containing the fitted `TfidfVectorizer` (50,000 vocabulary n-grams) and the trained `LogisticRegression` weight coefficients for instantaneous, zero-GPU inference.
+
+### Why Saved Models are in `.gitignore`
+
+In accordance with machine learning repository standards, the `saved_models/` folder is excluded from version control via `.gitignore`. The DistilBERT weights file (`model.safetensors`) is 268 MB, which exceeds GitHub's 100 MB single-file limit. Running Section 10 of the notebook reproduces these exact files locally on demand.
 
 ---
 
@@ -126,7 +241,7 @@ The table below summarizes performance across the full evaluation partitions. No
 | **TF-IDF + Logistic Regression**        |    20,000    |    25,000    |  0.8936  |  0.8937  | 0.8936 |  0.8936  | 0.9606 |     22.43     |
 | **GloVe + Logistic Regression**         |    20,000    |    25,000    |  0.7973  |  0.7974  | 0.7973 |  0.7973  | 0.8768 |     19.87     |
 | **BERT (frozen) + Logistic Regression** |     5,000     |    2,500    |  0.7972  |  0.7972  | 0.7972 |  0.7972  | 0.8848 |     22.89     |
-| **DistilBERT (fine-tuned)**             |     5,000     |    2,500    |  0.8948  |  0.8948  | 0.8948 |  0.8948  | 0.9628 |    101.44     |
+| **DistilBERT (fine-tuned)**             |     5,000     |    2,500    |  0.8948  |  0.8948  | 0.8948 |  0.8948  | 0.9628 |     101.44     |
 
 ### Controlled Apples-to-Apples Benchmark (Equal 5,000 Train / 2,500 Test)
 
@@ -157,17 +272,17 @@ Static word lookup tables discard sentiment-rich vocabulary like `unwatchable` a
 
 Both Fine-Tuned DistilBERT and the TF-IDF baseline were evaluated on challenging unseen test cases covering clear sentiment, mixed reviews, complex negation, and sarcasm:
 
-| Category | Full Review Text | DistilBERT Prediction | TF-IDF Baseline | Ground Truth | Analysis |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| **Clear Positive** | *"An absolute cinematic masterpiece! The performances were breathtaking and the storytelling was deeply moving from start to finish."* | Positive (98.69%) | Positive (77.09%) | Positive | Both models correctly detect strong positive polarity. |
-| **Clear Negative** | *"A colossal waste of time and money. Painfully dull dialogue, atrocious acting, and a completely incoherent plot."* | Negative (98.62%) | Negative (99.33%) | Negative | Both models identify harsh negative criticism. |
-| **Mixed / Nuanced** | *"While the visual effects and cinematography were undeniably stunning, the sluggish pacing and hollow characters left me disappointed."* | Negative (97.17%) | Negative (58.98%) | Negative | DistilBERT weighs the concluding clause; TF-IDF is conflicted by positive terms (*stunning*). |
-| **Complex Negation** | *"I walked in expecting a complete disaster, but it was not bad at all and actually quite charming and enjoyable."* | **Positive (97.63%)** | **Negative (63.33%) [FAIL]** | **Positive** | **Key finding:** TF-IDF fails due to negative word counts (*disaster*, *bad*). DistilBERT parses *not bad at all* correctly. |
-| **Subtle / Sarcastic** | *"Oh brilliant, another completely predictable sequel filled with cliche tropes that nobody ever asked for."* | Negative (98.18%) | Negative (68.59%) | Negative | Both models detect negative sentiment through contextual clues (*predictable*, *cliche*). |
+| Category                     | Full Review Text                                                                                                                            |    DistilBERT Prediction    |          TF-IDF Baseline          |    Ground Truth    | Analysis                                                                                                                                 |
+| :--------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------ | :-------------------------: | :--------------------------------: | :----------------: | :--------------------------------------------------------------------------------------------------------------------------------------- |
+| **Clear Positive**     | *"An absolute cinematic masterpiece! The performances were breathtaking and the storytelling was deeply moving from start to finish."*    |      Positive (98.69%)      |         Positive (77.09%)         |      Positive      | Both models correctly detect strong positive polarity.                                                                                   |
+| **Clear Negative**     | *"A colossal waste of time and money. Painfully dull dialogue, atrocious acting, and a completely incoherent plot."*                      |      Negative (98.62%)      |         Negative (99.33%)         |      Negative      | Both models identify harsh negative criticism.                                                                                           |
+| **Mixed / Nuanced**    | *"While the visual effects and cinematography were undeniably stunning, the sluggish pacing and hollow characters left me disappointed."* |      Negative (97.17%)      |         Negative (58.98%)         |      Negative      | DistilBERT weighs the concluding clause; TF-IDF is conflicted by positive terms (*stunning*).                                          |
+| **Complex Negation**   | *"I walked in expecting a complete disaster, but it was not bad at all and actually quite charming and enjoyable."*                       | **Positive (97.63%)** | **Negative (63.33%) [FAIL]** | **Positive** | **Key finding:** TF-IDF fails due to negative word counts (*disaster*, *bad*). DistilBERT parses *not bad at all* correctly. |
+| **Subtle / Sarcastic** | *"Oh brilliant, another completely predictable sequel filled with cliche tropes that nobody ever asked for."*                             |      Negative (98.18%)      |         Negative (68.59%)         |      Negative      | Both models detect negative sentiment through contextual clues (*predictable*, *cliche*).                                            |
 
 ---
 
-## Production Deployment and Verification
+## Deployment and Verification
 
 The pipeline provides two validated serving options:
 
